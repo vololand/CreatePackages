@@ -10,6 +10,8 @@
 #define MyAppAssocExt ".myp"
 #define MyAppAssocKey StringChange(MyAppAssocName, " ", "") + MyAppAssocExt
 
+#include "CodeDependencies.iss" ;
+
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
@@ -27,9 +29,9 @@ ChangesAssociations=yes
 DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only).
 ;PrivilegesRequired=lowest
-OutputDir="."
+OutputDir="C:\Users\user\Desktop\VOLO_installer\installer"
 OutputBaseFilename=VOLOLAND_GCS_v{#MyAppVersion}-win
-SetupIconFile=..\bin\mpdesktop.ico
+SetupIconFile="C:\Users\user\Desktop\VOLO_installer\bin\mpdesktop.ico"
 SolidCompression=yes
 WizardStyle=modern
 
@@ -41,9 +43,9 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\bin\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\bin\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\bin\config.xml"; DestDir: "{userdocs}\Mission Planner"; Flags: ignoreversion
+Source: "C:\Users\user\Desktop\VOLO_installer\bin\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\user\Desktop\VOLO_installer\bin\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\user\Desktop\VOLO_installer\bin\config.xml"; DestDir: "{userdocs}\Mission Planner"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Registry]
@@ -58,5 +60,5 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\Drivers\DPInstx64.exe"
+; Filename: "{app}\Drivers\DPInstx64.exe"
 ; Filename: "{app}\Drivers\DPInstx86.exe"
