@@ -1,4 +1,9 @@
-﻿[Code]
+﻿#define Dependency_Path_DotNet "Dependencies\\"
+#define Dependency_Path_VC2022 "Dependencies\\"
+#define Dependency_Path_WebView2 "Dependencies\\"
+#define Dependency_Path_DirectX "Dependencies\\"
+
+[Code]
 type
   TDependency_Entry = record
     Filename: String;
@@ -16,27 +21,21 @@ var
   Dependency_NeedToRestart, Dependency_ForceX86: Boolean;
   Dependency_DownloadPage: TDownloadWizardPage;
 
-//의존성 등록
 procedure Dependency_Add(const Filename, Parameters, Title, URL, Checksum: String;
   const ForceSuccess, RestartAfter: Boolean);
 var
   Dependency: TDependency_Entry;
   DependencyCount: Integer;
 begin
-  //설치 목록 메모 업데이트
   Dependency_Memo := Dependency_Memo + #13#10 + '%1' + Title;
 
   Dependency.Filename := Filename;
   Dependency.Parameters := Parameters;
   Dependency.Title := Title;
 
-  //재다운로드 방지
-  if FileExists(ExpandConstant('{tmp}{\}') + Filename) then
-    Dependency.URL := ''
-  else
-    Dependency.URL := URL;
+  Dependency.URL := '';
+  Dependency.Checksum := '';
 
-  Dependency.Checksum := Checksum;
   Dependency.ForceSuccess := ForceSuccess;
   Dependency.RestartAfter := RestartAfter;
 
@@ -45,15 +44,6 @@ begin
   Dependency_List[DependencyCount] := Dependency;
 end;
 
-//이벤트(마법사 초기화)
-<event('InitializeWizard')>
-procedure Dependency_InitializeWizard;
-begin
-  Dependency_DownloadPage := CreateDownloadPage(SetupMessage(msgWizardPreparing),
-    SetupMessage(msgPreparingDesc), nil);
-end;
-
-//이벤트(실제 설치 직전 단계)
 <event('PrepareToInstall')>
 function Dependency_PrepareToInstall(var NeedsRestart: Boolean): String;
 var
@@ -65,10 +55,8 @@ begin
 
   if DependencyCount > 0 then
   begin
-    // 다운로드 페이지 표시
     Dependency_DownloadPage.Show;
 
-    // 1) 필요한 파일 다운로드
     for DependencyIndex := 0 to DependencyCount - 1 do
     begin
       if Dependency_List[DependencyIndex].URL <> '' then
@@ -110,7 +98,6 @@ begin
       end;
     end;
 
-    // 2) 다운로드 성공 시, 실행/설치
     if Result = '' then
     begin
       for DependencyIndex := 0 to DependencyCount - 1 do
@@ -122,16 +109,16 @@ begin
         begin
           ResultCode := 0;
 
-          //파일 실행
           if ShellExec(
                '',
-               ExpandConstant('{tmp}{\}') + Dependency_List[DependencyIndex].Filename,
+               ExpandConstant('{app}\') + Dependency_List[DependencyIndex].Filename,
                Dependency_List[DependencyIndex].Parameters,
                '',
                SW_SHOWNORMAL,
                ewWaitUntilTerminated,
                ResultCode
              ) then
+
           begin
             if Dependency_List[DependencyIndex].RestartAfter then
             begin
@@ -148,20 +135,19 @@ begin
             begin
               break;
             end
-            else if ResultCode = 1641 then  // ERROR_SUCCESS_REBOOT_INITIATED
+            else if ResultCode = 1641 then
             begin
               NeedsRestart := True;
               Result := Dependency_List[DependencyIndex].Title;
               break;
             end
-            else if ResultCode = 3010 then  // ERROR_SUCCESS_REBOOT_REQUIRED
+            else if ResultCode = 3010 then
             begin
               Dependency_NeedToRestart := True;
               break;
             end;
           end;
 
-          // 실패 시 재시도/무시/중단
           case SuppressibleMsgBox(
                  FmtMessage(
                    SetupMessage(msgErrorFunctionFailed),[Dependency_List[DependencyIndex].Title, IntToStr(ResultCode)]
@@ -205,7 +191,6 @@ begin
   end;
 end;
 
-//이벤트(마법사 완료 직전, Ready Memo 업데이트)
 #ifndef Dependency_NoUpdateReadyMemo
 <event('UpdateReadyMemo')>
 #endif
@@ -234,17 +219,14 @@ begin
   end;
 end;
 
-//이벤트(NeedRestart)
 <event('NeedRestart')>
 function Dependency_NeedRestart: Boolean;
 begin
   Result := Dependency_NeedToRestart;
 end;
 
-//CPU 아키텍처 관련 유틸 함수들
 function Dependency_IsX64: Boolean;
 begin
-  // 강제 x86 모드가 아니고, 64비트 설치 모드라면 True
   Result := not Dependency_ForceX86 and Is64BitInstallMode;
 end;
 
@@ -258,13 +240,11 @@ end;
 
 function Dependency_ArchSuffix: String;
 begin
-  // 파일명 구분용: _x64 or ''(x86)
   Result := Dependency_String('', '_x64');
 end;
 
 function Dependency_ArchTitle: String;
 begin
-  // 타이틀 표시용: (x86) or (x64)
   Result := Dependency_String(' (x86)', ' (x64)');
 end;
 
@@ -308,90 +288,169 @@ end;
 //의존성 함수
 
 // .NET Framework 4.7.2
-procedure Dependency_AddDotNet47;
+procedure InstallDotNet47IfNeeded;
+var
+  Release: Cardinal;
+  ExecResult: Integer;
 begin
-  if not IsDotNetInstalled(net472, 0) then
+  if not RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', Release) or
+     (Release < 461808) then
   begin
-    Dependency_Add('dotnetfx47.exe',
-      '/lcid ' + IntToStr(GetUILanguage) + ' /passive /norestart',
-      '.NET Framework 4.7.2',
-      'https://go.microsoft.com/fwlink/?LinkId=863262',
-      '', False, False);
-  end;
+    MsgBox('.NET Framework 4.7.2가 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
+    ShellExec('', ExpandConstant('{app}\Dependencies\dotnetframework472.exe'),
+      '/lcid ' + IntToStr(GetUILanguage) + ' /passive /norestart', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
+  end
+  else
+    MsgBox('.NET Framework 4.7.2가 이미 설치되어 있습니다.', mbInformation, MB_OK);
 end;
 
-// Visual C++ 2015~2022
-procedure Dependency_AddVC2015To2022;
+
+procedure InstallVC2015To2022IfNeeded;
+var
+  ExecResult: Integer;
 begin
   if not IsMsiProductInstalled(
        Dependency_String('{65E5BD06-6392-3027-8C26-853107D3CF1A}', '{36F68A90-239C-34DF-B58C-64B30153CE35}'),
        PackVersionComponents(14, 42, 34433, 0)) then
   begin
-    Dependency_Add('vcredist2022' + Dependency_ArchSuffix + '.exe',
-      '/passive /norestart',
-      'Visual C++ 2015-2022 Redistributable' + Dependency_ArchTitle,
-      Dependency_String(
-        'https://aka.ms/vs/17/release/vc_redist.x86.exe',
-        'https://aka.ms/vs/17/release/vc_redist.x64.exe'
-      ),
-      '', False, False);
-  end;
+    MsgBox('Visual C++ 2022 Redistributable이(가) 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
+    ShellExec('', ExpandConstant('{app}\Dependencies\VC_redist.x64.exe'),
+      '/passive /norestart', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
+  end
+  else
+    MsgBox('Visual C++ 2022 Redistributable이(가) 이미 설치되어 있습니다.', mbInformation, MB_OK);
 end;
 
-// DirectX End-User Runtime
-procedure Dependency_AddDirectX;
-begin
-  Dependency_Add('dxwebsetup.exe',
-    '/q',
-    'DirectX End-User Runtime',
-    'https://download.microsoft.com/download/1/7/1/1718CCC4-6315-4D8E-9543-8E28A4E18C4C/dxwebsetup.exe',
-    '', True, False);
-end;
 
-// WebView2 Runtime
-procedure Dependency_AddWebView2;
+procedure InstallDirectXIfNeeded;
+var
+  DXVersion: string;
+  ExecResult: Integer;
 begin
-  if not RegValueExists(HKLM, Dependency_String('SOFTWARE', 'SOFTWARE\WOW6432Node') + '\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv') then
+  if not RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\DirectX', 'Version', DXVersion) or
+     (CompareStr(DXVersion, '4.09.00.0904') < 0) then
   begin
-    Dependency_Add('MicrosoftEdgeWebview2Setup.exe',
-      '/silent /install',
-      'WebView2 Runtime',
-      'https://go.microsoft.com/fwlink/p/?LinkId=2124703',
-      '', False, False);
-  end;
+    MsgBox('DirectX End-User Runtime이 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
+    ShellExec('', ExpandConstant('{app}\Dependencies\directx\DXSETUP.exe'),
+      '/silent', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
+  end
+  else
+    MsgBox('DirectX End-User Runtime이 이미 설치되어 있습니다.', mbInformation, MB_OK);
 end;
-// Driver
+
+
+procedure InstallWebView2IfNeeded;
+var
+  KeyPath: string;
+  ExecResult: Integer;
+begin
+  KeyPath := 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+  if not RegValueExists(HKLM, KeyPath, 'pv') then
+    KeyPath := 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+
+  if not RegValueExists(HKLM, KeyPath, 'pv') then
+  begin
+    MsgBox('WebView2 Runtime이 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
+    ShellExec('', ExpandConstant('{app}\Dependencies\MicrosoftEdgeWebview2Setup.exe'),
+      '/silent /install', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
+  end
+  else
+    MsgBox('WebView2 Runtime이 이미 설치되어 있습니다.', mbInformation, MB_OK);
+end;
+
+
 procedure InstallDriversIfNeeded();
 var
   i: Integer;
-  RequiredKeys: array of String;
-  MissingDriver: Boolean;
+  RegPaths, MissingList: array of String;
+  Missing: Boolean;
+  MessageText: String;
 begin
-  // 64bit os check
   if not IsWin64 then
   begin
     MsgBox('이 설치 프로그램은 64비트 시스템에서만 드라이버 설치를 지원합니다.', mbInformation, MB_OK);
     Exit;
   end;
+  
+RegPaths := [
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0001',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0002',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0003',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0010',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0011',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0012',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0013',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_03EB&PID_6124',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_1B4F&PID_9207',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0001',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0010',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0036',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0037',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0038',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0039',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_003B',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_003C',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_003D',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_003F',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0041',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0042',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0043',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_0044',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_004D',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_004E',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2341&PID_E001',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_1209&PID_5741',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_1209&PID_5740&MI_00',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_1209&PID_5740&MI_01',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_1209&PID_5740&MI_02',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_1209&PID_5740',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_0001',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_0002',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1001',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1002',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1005',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1011',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1017',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1015',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0001',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0002',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0003',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1016&REV_0200',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1026&REV_0200',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1058&MI_00',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1058&MI_01',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1058&MI_02',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_2DAE&PID_1058&REV_0101',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_3162&PID_0047',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_3162&PID_0049',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_3162&PID_004B&MI_00',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_3162&PID_004B&MI_02',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_1FC9&PID_001C',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0015',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0016',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0017',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0018',
+  'SYSTEM\DriverDatabase\DeviceIds\USB\VID_26AC&PID_0014'];
+  
+  MissingList := [];
+  Missing := False;
 
-  MissingDriver := False;
-  RequiredKeys := [
-    'SYSTEM\CurrentControlSet\Control\Class\{4D36E978-E325-11CE-BFC1-08002BE10318}', 
-    'SYSTEM\CurrentControlSet\Control\Class\{36FC9E60-C465-11CF-8056-444553540000}',
-    'SYSTEM\CurrentControlSet\Control\Class\{01105872-BF45-43BE-8B67-3C0F2B8CF0D9}'];
-
-  for i := 0 to GetArrayLength(RequiredKeys) - 1 do
+  for i := 0 to GetArrayLength(RegPaths) - 1 do
   begin
-    if not RegKeyExists(HKLM, RequiredKeys[i]) then
+    if not RegKeyExists(HKLM, RegPaths[i]) then
     begin
-      MissingDriver := True;
-      break;
+      Missing := True;
+      SetArrayLength(MissingList, GetArrayLength(MissingList) + 1);
     end;
   end;
 
-  if MissingDriver then
+  if Missing then
   begin
-    MsgBox('필요한 드라이버가 누락되어 설치를 시작합니다.', mbInformation, MB_OK);
+    MessageText := '드라이버가 설치되어 있지 않습니다:';
+    for i := 0 to GetArrayLength(MissingList) - 1 do
+      MessageText := MessageText + MissingList[i];
+
+    MsgBox(MessageText + '드라이버 설치를 시작합니다.', mbInformation, MB_OK);
     ShellExec('', ExpandConstant('{app}\Drivers\DPInstx64.exe'), '', '', SW_SHOWNORMAL, ewWaitUntilTerminated, i);
   end
   else
@@ -400,61 +459,27 @@ begin
   end;
 end;
 
-
-
-//설치 시작 전 설치 여부 확인 및 알림
-function InitializeSetup(): Boolean;
-var
-  Version: String;
-  PackedVersion, DirectXPackedVersion, DirectXMinimumVersion: Int64;
-  DirectXVersion: String;
-begin
-  // .NET Framework 4.7.2
-  if IsDotNetInstalled(net472, 0) then
-    MsgBox('.NET Framework 4.7.2가 이미 설치되어 있습니다.', mbInformation, MB_OK)
-  else
-    Dependency_AddDotNet47();
-
-  // Visual C++ 2015-2022
-  if IsMsiProductInstalled(
-       Dependency_String('{65E5BD06-6392-3027-8C26-853107D3CF1A}', 
-                          '{36F68A90-239C-34DF-B58C-64B30153CE35}'),
-       PackVersionComponents(14, 42, 34433, 0)) then
-    MsgBox('Visual C++ 2015-2022 Redistributable이(가) 이미 설치되어 있습니다.', mbInformation, MB_OK)
-  else
-    Dependency_AddVC2015To2022();
-
-  // DirectX - 3d hud, 3d flight view etc..
-  if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\DirectX', 'Version', DirectXVersion)
-     and StrToVersion(DirectXVersion, DirectXPackedVersion) then
-  begin
-    StrToVersion('4.09.00.0904', DirectXMinimumVersion);
-    if ComparePackedVersion(DirectXPackedVersion, DirectXMinimumVersion) >= 0 then
-      MsgBox('DirectX End-User Runtime이 이미 설치되어 있습니다.', mbInformation, MB_OK)
-    else
-      Dependency_AddDirectX();
-  end
-  else
-    Dependency_AddDirectX();
-
-  // WebView2 Runtime - UI Web, help, release note etc..
-  if RegValueExists(HKLM, Dependency_String('SOFTWARE', 'SOFTWARE\WOW6432Node') + '\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv') then
-    MsgBox('WebView2 Runtime이 이미 설치되어 있습니다.', mbInformation, MB_OK)
-  else
-    Dependency_AddWebView2();
-
-  Result := True; 
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
     InstallDriversIfNeeded();
+    InstallVC2015To2022IfNeeded();
+    InstallWebView2IfNeeded();
+    InstallDirectXIfNeeded();
+    InstallDotNet47IfNeeded();
   end;
 end;
 
 [Files]
-#ifdef Dependency_Path_DirectX
-Source: "{#Dependency_Path_DirectX}dxwebsetup.exe"; Flags: dontcopy noencryption
-#endif
+; .NET Framework 4.7.2
+Source: "Dependencies\dotnetframework472.exe"; DestDir: "{app}\Dependencies"; Flags: ignoreversion
+
+; Visual C++ 2022
+Source: "Dependencies\VC_redist.x64.exe"; DestDir: "{app}\Dependencies"; Flags: ignoreversion
+
+; WebView2
+Source: "Dependencies\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{app}\Dependencies"; Flags: ignoreversion
+
+; DirectX
+Source: "Dependencies\directx\DXSETUP.exe"; DestDir: "{app}\Dependencies\directx"; Flags: ignoreversion
