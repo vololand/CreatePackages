@@ -1,9 +1,4 @@
-﻿#define Dependency_Path_DotNet "Dependencies\\"
-#define Dependency_Path_VC2022 "Dependencies\\"
-#define Dependency_Path_WebView2 "Dependencies\\"
-#define Dependency_Path_DirectX "Dependencies\\"
-
-[Code]
+﻿[Code]
 type
   TDependency_Entry = record
     Filename: String;
@@ -285,63 +280,57 @@ begin
   Result := False;
 end;
 
-//의존성 함수
-
 // .NET Framework 4.7.2
 procedure InstallDotNet47IfNeeded;
 var
   Release: Cardinal;
+  FilePath: string;
   ExecResult: Integer;
 begin
   if not RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', Release) or
      (Release < 461808) then
   begin
     MsgBox('.NET Framework 4.7.2가 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
-    ShellExec('', ExpandConstant('{app}\Dependencies\dotnetframework472.exe'),
-      '/lcid ' + IntToStr(GetUILanguage) + ' /passive /norestart', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
+    
+    ExtractTemporaryFile('dotnetframework472.exe');
+    FilePath := ExpandConstant('{tmp}\dotnetframework472.exe');
+    
+    if not Exec(FilePath, '/lcid ' + IntToStr(GetUILanguage) + ' /passive /norestart', '', SW_SHOW, ewWaitUntilTerminated, ExecResult) then
+      MsgBox('.NET Framework 설치 실패! 코드: ' + IntToStr(ExecResult), mbError, MB_OK)
+    else
+      MsgBox('.NET Framework 설치 완료. 결과 코드: ' + IntToStr(ExecResult), mbInformation, MB_OK);
   end
   else
     MsgBox('.NET Framework 4.7.2가 이미 설치되어 있습니다.', mbInformation, MB_OK);
 end;
 
-
 procedure InstallVC2015To2022IfNeeded;
 var
+  VCVersion: string;
+  FilePath: string;
   ExecResult: Integer;
 begin
-  if not IsMsiProductInstalled(
-       Dependency_String('{65E5BD06-6392-3027-8C26-853107D3CF1A}', '{36F68A90-239C-34DF-B58C-64B30153CE35}'),
-       PackVersionComponents(14, 42, 34433, 0)) then
+  if not RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Version', VCVersion) or
+     (CompareStr(VCVersion, '14.42.34439.0') < 0) then
   begin
-    MsgBox('Visual C++ 2022 Redistributable이(가) 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
-    ShellExec('', ExpandConstant('{app}\Dependencies\VC_redist.x64.exe'),
-      '/passive /norestart', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
+    MsgBox('Visual C++ 2022 Redistributable이 설치되어 있지 않거나, 버전이 낮아 설치를 시작합니다.', mbInformation, MB_OK);
+
+    ExtractTemporaryFile('VC_redist.x64.exe');
+    FilePath := ExpandConstant('{tmp}\VC_redist.x64.exe');
+
+    if not Exec(FilePath, '/passive /norestart', '', SW_SHOW, ewWaitUntilTerminated, ExecResult) then
+      MsgBox('VC++ 설치 실패! 코드: ' + IntToStr(ExecResult), mbError, MB_OK)
+    else
+      MsgBox('VC++ 설치 완료. 결과 코드: ' + IntToStr(ExecResult), mbInformation, MB_OK);
   end
   else
-    MsgBox('Visual C++ 2022 Redistributable이(가) 이미 설치되어 있습니다.', mbInformation, MB_OK);
+    MsgBox('VC++ 2022 Redistributable이 이미 설치되어 있습니다.', mbInformation, MB_OK);
 end;
-
-
-procedure InstallDirectXIfNeeded;
-var
-  DXVersion: string;
-  ExecResult: Integer;
-begin
-  if not RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\DirectX', 'Version', DXVersion) or
-     (CompareStr(DXVersion, '4.09.00.0904') < 0) then
-  begin
-    MsgBox('DirectX End-User Runtime이 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
-    ShellExec('', ExpandConstant('{app}\Dependencies\directx\DXSETUP.exe'),
-      '/silent', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
-  end
-  else
-    MsgBox('DirectX End-User Runtime이 이미 설치되어 있습니다.', mbInformation, MB_OK);
-end;
-
 
 procedure InstallWebView2IfNeeded;
 var
   KeyPath: string;
+  FilePath: string;
   ExecResult: Integer;
 begin
   KeyPath := 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
@@ -351,8 +340,14 @@ begin
   if not RegValueExists(HKLM, KeyPath, 'pv') then
   begin
     MsgBox('WebView2 Runtime이 설치되어 있지 않아 설치가 진행됩니다.', mbInformation, MB_OK);
-    ShellExec('', ExpandConstant('{app}\Dependencies\MicrosoftEdgeWebview2Setup.exe'),
-      '/silent /install', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ExecResult);
+
+    ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
+    FilePath := ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe');
+
+    if not Exec(FilePath, '/silent /install', '', SW_SHOW, ewWaitUntilTerminated, ExecResult) then
+      MsgBox('WebView2 설치 실패! 코드: ' + IntToStr(ExecResult), mbError, MB_OK)
+    else
+      MsgBox('WebView2 설치 완료. 결과 코드: ' + IntToStr(ExecResult), mbInformation, MB_OK);
   end
   else
     MsgBox('WebView2 Runtime이 이미 설치되어 있습니다.', mbInformation, MB_OK);
@@ -464,22 +459,23 @@ begin
   if CurStep = ssPostInstall then
   begin
     InstallDriversIfNeeded();
-    InstallVC2015To2022IfNeeded();
-    InstallWebView2IfNeeded();
-    InstallDirectXIfNeeded();
-    InstallDotNet47IfNeeded();
   end;
+end;
+
+procedure InitializeWizard();
+begin
+  InstallVC2015To2022IfNeeded();
+  InstallWebView2IfNeeded();
+  InstallDotNet47IfNeeded();
 end;
 
 [Files]
 ; .NET Framework 4.7.2
-Source: "Dependencies\dotnetframework472.exe"; DestDir: "{app}\Dependencies"; Flags: ignoreversion
+Source: "Dependencies\dotnetframework472.exe"; Flags: dontcopy
 
 ; Visual C++ 2022
-Source: "Dependencies\VC_redist.x64.exe"; DestDir: "{app}\Dependencies"; Flags: ignoreversion
+
+Source: "Dependencies\VC_redist.x64.exe"; Flags: dontcopy
 
 ; WebView2
-Source: "Dependencies\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{app}\Dependencies"; Flags: ignoreversion
-
-; DirectX
-Source: "Dependencies\directx\DXSETUP.exe"; DestDir: "{app}\Dependencies\directx"; Flags: ignoreversion
+Source: "Dependencies\MicrosoftEdgeWebview2Setup.exe"; Flags: dontcopy
